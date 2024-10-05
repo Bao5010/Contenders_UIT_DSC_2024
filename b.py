@@ -31,7 +31,7 @@ def preprocess_data(dataset):
         label = label_mapping[value['label']]  # Convert label to numerical value
         
         # Load the image
-        image = Image.open(image_path).convert("RGB")
+        image = Image.open(image_path)
         
         # Append the data
         images.append(image)
@@ -42,10 +42,8 @@ def preprocess_data(dataset):
     inputs = processor(images=images, text=captions, return_tensors="pt", padding=True, truncation=True)
     
     return {
-        'input_ids': inputs['input_ids'].tolist(),
-        'attention_mask': inputs['attention_mask'].tolist(),
-        'pixel_values': [pv.tolist() for pv in inputs['pixel_values']],
-        'labels': labels
+        'input_ids': inputs['input_ids'],
+        'labels': torch.tensor(labels)
     }
 
 # Example usage
