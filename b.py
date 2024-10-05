@@ -2,6 +2,7 @@ from transformers import Qwen2VLForConditionalGeneration, DefaultDataCollator, A
 import torch
 import json
 from PIL import Image
+from datasets import Dataset
 
 # Load the dataset
 with open('vimmsd-warmup.json', 'r', encoding='utf-8') as f:
@@ -20,28 +21,38 @@ label_mapping = {
 }
 
 def preprocess_data(dataset):
-    preprocessed_data = []
+    images = []
+    captions = []
+    labels = []
+    
     for key, value in dataset.items():
         image_path = 'warmup-images\\' + value['image']
         caption = value['caption']
         label = label_mapping[value['label']]  # Convert label to numerical value
         
         # Load the image
-        image = Image.open(image_path)
+        image = Image.open(image_path).convert("RGB")
         
-        # Preprocess the image and caption
-        inputs = processor(images=image, text=caption, return_tensors="pt")
-        
-        # Append the preprocessed data
-        preprocessed_data.append({
-            'inputs': inputs,
-            'label': label
-        })
+        # Append the data
+        images.append(image)
+        captions.append(caption)
+        labels.append(label)
     
-    return preprocessed_data
+    # Preprocess the images and captions
+    inputs = processor(images=images, text=captions, return_tensors="pt", padding=True, truncation=True)
+    
+    return {
+        'input_ids': inputs['input_ids'].tolist(),
+        'attention_mask': inputs['attention_mask'].tolist(),
+        'pixel_values': [pv.tolist() for pv in inputs['pixel_values']],
+        'labels': labels
+    }
 
 # Example usage
-preprocessed_dataset = preprocess_data(data)
+preprocessed_data = preprocess_data(data)
+
+# Convert to Dataset object
+preprocessed_dataset = Dataset.from_dict(preprocessed_data)
 
 data_collator = DefaultDataCollator()
 
