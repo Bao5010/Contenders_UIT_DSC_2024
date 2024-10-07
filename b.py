@@ -9,7 +9,7 @@ with open('vimmsd-warmup.json', 'r', encoding='utf-8') as f:
     data = json.load(f)
         
 # Initialize the processor with the correct model name
-model_name = "Qwen/Qwen2-VL-2B-Instruct"  # Update to the correct model name
+model_name = "Qwen/Qwen2-VL-0.5B-Instruct"  # Update to the correct model name
 processor = AutoProcessor.from_pretrained(model_name)
 
 # Create a mapping from label strings to numerical values
