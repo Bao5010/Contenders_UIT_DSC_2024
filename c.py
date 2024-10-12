@@ -29,7 +29,7 @@ class MultiModalDataset(Dataset):
     def __getitem__(self, idx):
         key = self.keys[idx]
         item = self.data[key]
-        image = Image.open("dev-images\\" + item['image'])
+        image = Image.open("train-images\\" + item['image']).convert("RGB")
         if self.transform:
             image = self.transform(image)
         else:
@@ -43,7 +43,7 @@ tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
 
 # Create dataset
-dataset = MultiModalDataset('vimmsd-train', tokenizer, feature_extractor)
+dataset = MultiModalDataset('vimmsd-train.json', tokenizer, feature_extractor)
 
 class MultiModalModel(nn.Module):
     def __init__(self, image_model, text_model, num_labels):
@@ -75,7 +75,7 @@ model = MultiModalModel(image_model, text_model, num_labels=4)
 training_args = TrainingArguments(
     output_dir='./results',
     num_train_epochs=3,
-    per_device_train_batch_size=4,
+    per_device_train_batch_size=8,
     save_steps=10_000,
     save_total_limit=2,
     logging_steps=500,
@@ -126,41 +126,42 @@ trainer = Trainer(
 
 # Train the model
 trainer.train()
+torch.save(model.state_dict(), 'model.pth')
 
-# Define the device
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# # Define the device
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Define the model
-model = MultiModalModel(image_model, text_model, num_labels=4).to(device)
+# # Define the model
+# model = MultiModalModel(image_model, text_model, num_labels=4).to(device)
 
-def predict_label(image_path, caption):
-    # Preprocess the image
-    image = Image.open(image_path)
-    image = feature_extractor(images=image, return_tensors="pt")['pixel_values'].squeeze(0)
+# def predict_label(image_path, caption):
+#     # Preprocess the image
+#     image = Image.open(image_path)
+#     image = feature_extractor(images=image, return_tensors="pt")['pixel_values'].squeeze(0)
 
-    # Preprocess the caption
-    caption = tokenizer(caption, return_tensors="pt", padding=True, truncation=True)
+#     # Preprocess the caption
+#     caption = tokenizer(caption, return_tensors="pt", padding=True, truncation=True)
 
-    # Move tensors to the same device as the model
-    image = image.unsqueeze(0).to(device)
-    caption = {key: val.to(device) for key, val in caption.items()}
+#     # Move tensors to the same device as the model
+#     image = image.unsqueeze(0).to(device)
+#     caption = {key: val.to(device) for key, val in caption.items()}
 
-    # Get the model's predictions
-    with torch.no_grad():
-        logits = model(image, caption['input_ids'], caption['token_type_ids'], caption['attention_mask'])
+#     # Get the model's predictions
+#     with torch.no_grad():
+#         logits = model(image, caption['input_ids'], caption['token_type_ids'], caption['attention_mask'])
 
-    # Convert logits to probabilities and get the predicted label
-    probabilities = torch.nn.functional.softmax(logits, dim=1)
-    predicted_label_idx = torch.argmax(probabilities, dim=1).item()
+#     # Convert logits to probabilities and get the predicted label
+#     probabilities = torch.nn.functional.softmax(logits, dim=1)
+#     predicted_label_idx = torch.argmax(probabilities, dim=1).item()
 
-    # Map the index to the label
-    label_map = {0: "non-sarcasm", 1: "text-sarcasm", 2: "image-sarcasm", 3: "multi-sarcasm"}
-    predicted_label = label_map[predicted_label_idx]
+#     # Map the index to the label
+#     label_map = {0: "not-sarcasm", 1: "text-sarcasm", 2: "image-sarcasm", 3: "multi-sarcasm"}
+#     predicted_label = label_map[predicted_label_idx]
 
-    return predicted_label
+#     return predicted_label
 
-# Example usage
-image_path = 'warmup-images\\0bb8a23b1dbceb303c4dbbe83789b08b8ce3564cedd43f36810581b4cf215423.jpg'
-caption = 'Ủa thiệt hả? 🤨😁😁😁\n#phetphaikhong'
-label = predict_label(image_path, caption)
-print(f'Predicted label: {label}')
+# # Example usage
+# image_path = 'warmup-images\\0bb8a23b1dbceb303c4dbbe83789b08b8ce3564cedd43f36810581b4cf215423.jpg'
+# caption = 'Ủa thiệt hả? 🤨😁😁😁\n#phetphaikhong'
+# label = predict_label(image_path, caption)
+# print(f'Predicted label: {label}')
