@@ -1,64 +1,92 @@
 import json
-import os
-from PIL import Image
 import torch
-from torchvision import transforms
-import pickle
-from torch.nn.utils.rnn import pad_sequence
-from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+from transformers import BertTokenizer, ViTFeatureExtractor, ViTModel, BertModel
+from PIL import Image
+import torch.nn as nn
+import os
 
-# load the model 
-# filename = 'my_model.sav'
-# model = pickle.load(open(filename, 'rb')) 
-# model.eval()
-model = Qwen2VLForConditionalGeneration.from_pretrained("D:\\Contenders_UIT_DSC_2024\\my_model\\checkpoint-80")
-processor = AutoProcessor.from_pretrained("D:\\Contenders_UIT_DSC_2024\\my_model\\checkpoint-80")
-# Load the data
+class MultiModalModel(nn.Module):
+    def __init__(self, image_model, text_model, num_labels):
+        super(MultiModalModel, self).__init__()
+        self.image_model = image_model
+        self.text_model = text_model
+        self.classifier = nn.Linear(image_model.config.hidden_size + text_model.config.hidden_size, num_labels)
+        self.loss_fn = nn.CrossEntropyLoss()
+
+    def forward(self, pixel_values, input_ids, token_type_ids, attention_mask, labels=None):
+        image_features = self.image_model(pixel_values).last_hidden_state[:, 0, :]
+        text_features = self.text_model(input_ids=input_ids, token_type_ids=token_type_ids, attention_mask=attention_mask).last_hidden_state[:, 0, :]
+        combined_features = torch.cat((image_features, text_features), dim=1)
+        logits = self.classifier(combined_features)
+        if labels is not None:
+            loss = self.loss_fn(logits, labels)
+            return loss, logits
+        return logits
+
+# Load pre-trained models
+image_model = ViTModel.from_pretrained('google/vit-base-patch16-224')
+text_model = BertModel.from_pretrained('bert-base-uncased')
+
+# Define the model
+model = MultiModalModel(image_model, text_model, num_labels=4)
+
+# Load the saved model state dictionary
+model.load_state_dict(torch.load('model.pth'))
+
+# Define the device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model.to(device)
+
+# Initialize tokenizer and feature extractor
+tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+feature_extractor = ViTFeatureExtractor.from_pretrained('google/vit-base-patch16-224')
+
+def predict_label(image_path, caption):
+    # Preprocess the image
+    image = Image.open(image_path).convert("RGB")
+    image = feature_extractor(images=image, return_tensors="pt")['pixel_values'].squeeze(0)
+
+    # Preprocess the caption
+    caption = tokenizer(caption, return_tensors="pt", padding=True, truncation=True)
+
+    # Move tensors to the same device as the model
+    image = image.unsqueeze(0).to(device)
+    caption = {key: val.to(device) for key, val in caption.items()}
+
+    # Get the model's predictions
+    with torch.no_grad():
+        logits = model(image, caption['input_ids'], caption['token_type_ids'], caption['attention_mask'])
+
+    # Convert logits to probabilities and get the predicted label
+    probabilities = torch.nn.functional.softmax(logits, dim=1)
+    predicted_label_idx = torch.argmax(probabilities, dim=1).item()
+
+    # Map the index to the label
+    label_map = {0: "non-sarcasm", 1: "text-sarcasm", 2: "image-sarcasm", 3: "multi-sarcasm"}
+    predicted_label = label_map[predicted_label_idx]
+
+    return predicted_label
+
+# Load the test data
 with open('vimmsd-public-test.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
+    test_data = json.load(f)
 
-# Initialize the results dictionary
 results = {}
 
-# Define the image transformation (replace with your model's required transformations)
-transform = transforms.Compose([
-    transforms.Resize((224, 224)),
-    transforms.ToTensor(),
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-])
+# Predict labels for each entry in the test data
+for idx, entry in test_data.items():
+    image_path = os.path.join('dev-images\\', entry['image'])
+    caption = entry['caption']
+    label = predict_label(image_path, caption)
+    results[int(idx)] = label
 
-# Define the label mapping
-label_mapping = {
-    0: 'multi-sarcasm',
-    1: 'not-sarcasm',
-    2: 'text-sarcasm',
-    3: 'image-sarcasm'
-}
-
-# Iterate over each entry in the JSON file
-for key, value in data.items():
-    # image_path = os.path.join('dev-images\\', value['image'])
-    # image = Image.open(image_path).convert('RGB')
-    # inputs = processor(images=image, text=value['caption'], return_tensors="pt", padding=True)
-    # inputs['input_ids'] = inputs['input_ids'].long()
-
-    # label = 'not-sarcasm'
-    # # Predict the label using the model
-    # with torch.no_grad():
-    #     output = model(input_ids=inputs['input_ids'])
-    #     logits = output.logits  # Extract logits from the model output
-    #     _, predicted = torch.min(logits, 1)
-    #     label = label_mapping[0]
-    label = label_mapping[1]
-    # Store the result
-    results[key] = label
-
-# Create the final output JSON structure
-output_json = {
+# Save the results to results.json
+output = {
     "results": results,
     "phase": "dev"
 }
 
-# Write the output JSON to a file
 with open('results.json', 'w', encoding='utf-8') as f:
-    json.dump(output_json, f, ensure_ascii=False, indent=4)
+    json.dump(output, f, ensure_ascii=False, indent=4)
+
+print("Predictions saved to results.json")
