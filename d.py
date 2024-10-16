@@ -112,4 +112,4 @@ trainer = Trainer(
 
 trainer.train()  # Start training the model
 # save the model
-trainer.save_model(repo_id)
+torch.save(model.state_dict(), 'model_qwen.pth')
