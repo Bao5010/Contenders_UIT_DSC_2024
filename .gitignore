@@ -1,1 +1,4 @@
 train-images/
+dev-images/
+*.pth
+__pycache__/

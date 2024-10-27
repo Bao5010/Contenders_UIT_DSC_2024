@@ -1,0 +1,188 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import math
+from transformers import AutoModel, Trainer, TrainingArguments
+
+class AddNorm(nn.Module):
+    def __init__(self, size, dropout=0.5):
+        super(AddNorm, self).__init__()
+        self.norm = nn.LayerNorm(size)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x, residual):
+        return self.norm(x + self.dropout(residual))
+
+class FFN(nn.Module):
+    def __init__(self, d_model, d_ff=768, dropout=0.5):
+        super(FFN, self).__init__()
+        self.linear1 = nn.Linear(d_model, d_ff)
+        self.linear2 = nn.Linear(d_ff, d_model)
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, x):
+        return self.linear2(self.dropout(F.relu(self.linear1(x))))
+
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, num_heads, dropout=0.5):
+        super(MultiHeadAttention, self).__init__()
+        assert d_model % num_heads == 0
+        
+        self.d_k = d_model // num_heads
+        self.num_heads = num_heads
+        
+        self.W_q = nn.Linear(d_model, d_model)
+        self.W_k = nn.Linear(d_model, d_model)
+        self.W_v = nn.Linear(d_model, d_model)
+        self.W_o = nn.Linear(d_model, d_model)
+        
+        self.dropout = nn.Dropout(dropout)
+        
+    def forward(self, q, k, v, mask=None):
+        batch_size = q.size(0)
+        
+        # Linear projections and reshape
+        q = self.W_q(q).view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
+        k = self.W_k(k).view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
+        v = self.W_v(v).view(batch_size, -1, self.num_heads, self.d_k).transpose(1, 2)
+        
+        # Scaled dot-product attention
+        scores = torch.matmul(q, k.transpose(-2, -1)) / math.sqrt(self.d_k)
+        
+        if mask is not None:
+            # Handle different mask shapes
+            if mask.dim() == 2:
+                # Convert 2D mask [B, seq_len] to 4D [B, 1, 1, seq_len]
+                mask = mask.unsqueeze(1).unsqueeze(2)
+            elif mask.dim() == 3:
+                # Convert 3D mask [B, seq_len_q, seq_len_k] to 4D [B, 1, seq_len_q, seq_len_k]
+                mask = mask.unsqueeze(1)
+            
+            # Expand mask for all attention heads
+            mask = mask.expand(batch_size, self.num_heads, scores.size(2), scores.size(3))
+            scores = scores.masked_fill(mask == 0, -1e9)
+        
+        attn = F.softmax(scores, dim=-1)
+        attn = self.dropout(attn)
+        
+        # Apply attention to values
+        context = torch.matmul(attn, v)
+        
+        # Reshape and linear projection
+        context = context.transpose(1, 2).contiguous().view(batch_size, -1, self.num_heads * self.d_k)
+        output = self.W_o(context)
+        
+        return output
+
+class DynRTLayer(nn.Module):
+    def __init__(self, d_model, num_heads, d_ff, dropout=0.5):
+        super(DynRTLayer, self).__init__()
+        
+        # Multi-Head Co-Attention Routing
+        self.co_attn_routing = MultiHeadAttention(d_model, num_heads, dropout)
+        self.add_norm1 = AddNorm(d_model, dropout)
+        
+        # Multi-Head Self-Attention
+        self.self_attn = MultiHeadAttention(d_model, num_heads, dropout)
+        self.add_norm2 = AddNorm(d_model, dropout)
+        
+        # Feed-Forward Network
+        self.ffn = FFN(d_model, d_ff, dropout)
+        self.add_norm3 = AddNorm(d_model, dropout)
+        
+    def forward(self, x_text, x_image, text_mask=None, image_mask=None):
+        # Ensure masks have correct dimensions and values
+        if text_mask is not None:
+            text_mask = text_mask.bool()  # Convert to boolean
+        if image_mask is not None:
+            image_mask = image_mask.bool()  # Convert to boolean
+            
+        # Co-Attention Routing
+        co_attn_out = self.co_attn_routing(x_text, x_image, x_image, mask=image_mask)
+        co_attn_out = self.add_norm1(x_text, co_attn_out)
+        
+        # Self-Attention
+        self_attn_out = self.self_attn(co_attn_out, co_attn_out, co_attn_out, mask=text_mask)
+        self_attn_out = self.add_norm2(co_attn_out, self_attn_out)
+        
+        # Feed-Forward Network
+        ffn_out = self.ffn(self_attn_out)
+        output = self.add_norm3(self_attn_out, ffn_out)
+        
+        return output
+
+class DynRTMultiModalModel(nn.Module):
+    def __init__(self, text_model, image_model, num_labels, d_model=2048, num_heads=8, d_ff=2048, num_layers=3):
+        super(DynRTMultiModalModel, self).__init__()
+        self.text_model = text_model
+        self.image_model = image_model
+
+        # Freeze the pre-trained models
+        for param in text_model.parameters():
+            param.requires_grad = False
+        for param in image_model.parameters():
+            param.requires_grad = False
+            
+        self.d_model = d_model
+        
+        # Project image and text features to same dimension if needed
+        self.text_projection = nn.Linear(text_model.config.hidden_size, d_model)
+        self.image_projection = nn.Linear(image_model.config.hidden_size, d_model)
+        
+        # DynRT layers
+        self.dynrt_layers = nn.ModuleList([
+            DynRTLayer(d_model, num_heads, d_ff) for _ in range(num_layers)
+        ])
+        
+        # Final classifier
+        self.classifier = nn.Sequential(
+            nn.Linear(d_model, d_model // 2),
+            nn.ReLU(),
+            nn.Dropout(0.5),
+            nn.Linear(d_model // 2, num_labels)
+        )
+        
+        self.loss_fn = nn.CrossEntropyLoss()
+        
+    def forward(self, pixel_values, input_ids, attention_mask, labels=None):
+        # Get text features from PHOBert
+        text_outputs = self.text_model(input_ids=input_ids, attention_mask=attention_mask)
+        text_features = text_outputs.last_hidden_state
+        text_features = self.text_projection(text_features)
+        
+        # Get image features from ViT
+        image_outputs = self.image_model(pixel_values)
+        image_features = image_outputs.last_hidden_state
+        image_features = self.image_projection(image_features)
+        
+        # Create image attention mask (all ones since we want to attend to all image patches)
+        batch_size = image_features.size(0)
+        image_mask = torch.ones((batch_size, image_features.size(1)), 
+                              dtype=torch.bool, 
+                              device=image_features.device)
+        
+        # Apply DynRT layers
+        features = text_features
+        for layer in self.dynrt_layers:
+            features = layer(features, image_features, attention_mask, image_mask)
+            
+        # Get sequence representation (CLS token)
+        sequence_output = features[:, 0, :]
+        
+        # Classification
+        logits = self.classifier(sequence_output)
+        
+        if labels is not None:
+            loss = self.loss_fn(logits, labels)
+            return loss, logits
+        return logits
+
+# Initialize the model
+def create_dynrt_model(text_model_name='vinai/phobert-base-v2', 
+                      image_model_name='google/vit-base-patch32-384',
+                      num_labels=2):
+    text_model = AutoModel.from_pretrained(text_model_name)
+    image_model = AutoModel.from_pretrained(image_model_name)
+
+    model = DynRTMultiModalModel(text_model, image_model, num_labels)
+    return model

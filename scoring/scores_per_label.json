@@ -1,0 +1,34 @@
+{
+    "not-sarcasm": {
+        "precision": 0.12660771704180065,
+        "recall": 0.17816742081447964,
+        "tp": 315,
+        "fp": 307,
+        "fn": 127,
+        "tn": 664
+    },
+    "multi-sarcasm": {
+        "precision": 0.20419354838709677,
+        "recall": 0.1679936305732484,
+        "tp": 633,
+        "fp": 142,
+        "fn": 309,
+        "tn": 329
+    },
+    "text-sarcasm": {
+        "precision": 0.0,
+        "recall": 0.0,
+        "tp": 0,
+        "fp": 0,
+        "fn": 1,
+        "tn": 1412
+    },
+    "image-sarcasm": {
+        "precision": 0.046875,
+        "recall": 0.026785714285714284,
+        "tp": 3,
+        "fp": 13,
+        "fn": 25,
+        "tn": 1372
+    }
+}

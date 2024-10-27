@@ -1,0 +1,10 @@
+add multi 200:
+0:
+num epochs: 30
+batch size: 32
+num heads: 8
+num layers: 3
+learning rate: 2e-5
+weight decay: 1e-5
+dropout 0.5
+early stopping: 2

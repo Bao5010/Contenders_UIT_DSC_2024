@@ -1,0 +1,157 @@
+Multi not: 
+0:
+num epochs: 5
+batch size: 8
+num heads: 8
+num layers: 3
+learning rate: 2e-5
+weight decay: 0.01
+dropout: 0.1
+
+1:
+num epochs: 5
+batch size: 8
+num heads: 2
+num layers: 4
+learning rate: 2e-5
+weight decay: 0.01
+dropout: 0.1
+
+Image not: 
+0:
+num epochs: 30
+batch size: 32
+num heads: 8
+num layers: 3
+learning rate: 2e-5
+weight decay: 1e-5
+dropout 0.5
+result: recall 0.5/115 prediction
+1:
+num epochs: 20 -> 25
+batch size: 32
+num heads: 8
+num layers: 3
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+2:
+num epochs: 30
+batch size: 32
+num heads: 16
+num layers: 4
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+3:
+num epochs: 30
+batch size: 32
+num heads: 4
+num layers: 3
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+4:
+num epochs: 30
+batch size: 32
+num heads: 16
+num layers: 3
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+5:
+num epochs: 30
+batch size: 32
+num heads: 4
+num layers: 4
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+5:
+num epochs: 30
+batch size: 32
+num heads: 4
+num layers: 5
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+6:
+num epochs: 30
+batch size: 32
+num heads: 4
+num layers: 6
+learning rate: 2e-5
+weight decay: 1e-5
+dropout: 0.5
+
+Overall: 
+- best: 0 + 0
+    recall: 0.3967
+    precision: 0.4
+    f1: 0.3964
+- 0 + 1:
+    recall: 0.4115 (highest)
+    precision: 0.385
+    f1: 0.385
+- 1 + 0: 
+    precision: 0.4068
+    recall: 0.38
+    f1: 0.387
+- 0 + 2:
+    precision: 0.3767
+    recall: 0.3838
+    f1: 0.3797
+- 1' + 0:
+    precision: 0.42 (highest)
+    recall 0.38
+    f1: 0.392
+- 2' + 0:
+    precision:
+    recall:
+    f1: 
+
+
+
+multi:
+0':
+num epochs: 5
+batch size: 8
+num heads: 8
+num layers: 3
+learning rate: 2e-5
+weight decay: 0.01
+dropout: 0.1
+1':
+num epochs: 4
+batch size: 8
+num heads: 8
+num layers: 4
+learning rate: 2e-5
+weight decay: 0.01
+dropout: 0.1
+2':
+num epochs: 5
+batch size: 8
+num heads: 8
+num layers: 4
+learning rate: 2e-5
+weight decay: 0.01
+dropout: 0.1
+
+** split
+0 + 0: 0.351 (best)
+0 + 2: 0.3381
+0 + 3: 0.3381
+0 + 4: 0.3444
+0 + 5: 
+    "precision": 0.34891641828117237,
+    "recall": 0.36699524248699966,
+    "f1": 0.3468788011003878
+
+Tried with xlm-roberta-base and large with above params, still not good (around 0.39)
